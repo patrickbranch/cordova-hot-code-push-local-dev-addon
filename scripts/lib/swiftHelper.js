@@ -15,6 +15,7 @@ var projectRoot;
 var projectName;
 var projectModuleName;
 var iosPlatformPath;
+const cordova = require('cordova');
 
 module.exports = {
   activate: activate,
@@ -93,7 +94,6 @@ function loadProjectFile() {
       }
 
       var pbxPath = project_files[0];
-
       var xcodeproj = context.requireCordovaModule('xcode').project(pbxPath);
       xcodeproj.parseSync();
 
@@ -118,7 +118,6 @@ function loadProjectFile() {
       };
     }
   }
-
   return projectFile;
 }
 
@@ -130,20 +129,24 @@ function loadProjectFile() {
  *
  * @return {String} name of the project
  */
-function getProjectName(ctx, projectRoot) {
-  var cordova_util = ctx.requireCordovaModule('cordova-lib/src/cordova/util'),
-    xml = cordova_util.projectConfig(projectRoot),
-    ConfigParser;
+ function getConfig(ctx) {
+   var cordova_util = ctx.requireCordovaModule('cordova-lib/src/cordova/util'),
+     xml = cordova_util.projectConfig(cordova.findProjectRoot()),
+     ConfigParser;
 
-  // If we are running Cordova 5.4 or abova - use parser from cordova-common.
-  // Otherwise - from cordova-lib.
-  try {
-    ConfigParser = ctx.requireCordovaModule('cordova-common/src/ConfigParser/ConfigParser');
-  } catch (e) {
-    ConfigParser = ctx.requireCordovaModule('cordova-lib/src/configparser/ConfigParser')
-  }
+   // If we are running Cordova 5.4 or abova - use parser from cordova-common.
+   // Otherwise - from cordova-lib.
+   try {
+     ConfigParser = ctx.requireCordovaModule('cordova-common/src/ConfigParser/ConfigParser');
+   } catch (e) {
+     ConfigParser = ctx.requireCordovaModule('cordova-lib/src/configparser/ConfigParser')
+   }
 
-  return new ConfigParser(xml).name();
+  return new ConfigParser(xml);
+}
+
+function getProjectName(ctx){
+  return getConfig(ctx).name();
 }
 
 /**
@@ -181,7 +184,13 @@ function injectSwiftOptionsInProjectConfig(xcodeProject) {
 
   for (config in configurations) {
     buildSettings = configurations[config].buildSettings;
-    buildSettings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET;
+
+    /* Don't override IPHONEOS_DEPLOYMENT_TARGET if it is already set to
+    something greater than 8.0 */
+    if (!(('IPHONEOS_DEPLOYMENT_TARGET' in buildSettings) &&
+      (Number(buildSettings['IPHONEOS_DEPLOYMENT_TARGET'].split('.')[0]) >= 8))){
+      buildSettings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET;
+    }
     buildSettings['EMBEDDED_CONTENT_CONTAINS_SWIFT'] = "YES";
     buildSettings['LD_RUNPATH_SEARCH_PATHS'] = '"@executable_path/Frameworks"';
     buildSettings['SWIFT_VERSION'] = '3.0';
@@ -191,7 +200,7 @@ function injectSwiftOptionsInProjectConfig(xcodeProject) {
       setProjectModuleName(buildSettings['PRODUCT_NAME']);
     }
   }
-  logger.info('iOS project now has deployment target set to: ' + IOS_DEPLOYMENT_TARGET);
+  logger.info('iOS project now has deployment target set to: ' + buildSettings['IPHONEOS_DEPLOYMENT_TARGET']);
   logger.info('iOS project option EMBEDDED_CONTENT_CONTAINS_SWIFT set as: YES');
   logger.info('iOS project Runpath Search Paths set to: @executable_path/Frameworks');
   logger.info('iOS project "Use Legacy Swift Language Version" set to: NO');
