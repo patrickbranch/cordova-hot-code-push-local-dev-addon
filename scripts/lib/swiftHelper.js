@@ -94,6 +94,7 @@ function loadProjectFile() {
       }
 
       var pbxPath = project_files[0];
+
       var xcodeproj = context.requireCordovaModule('xcode').project(pbxPath);
       xcodeproj.parseSync();
 
