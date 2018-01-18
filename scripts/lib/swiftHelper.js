@@ -171,6 +171,36 @@ function nonComments(obj) {
 
 // endregion
 
+/**
+ * Get build configurations for application targets, as opposed to
+ * configurations for test targets
+ *
+ * @param {Object} xcodeProject - xcode project file instance
+ */
+function getApplicationBuildConfigurations(xcodeProject){
+
+  const isNativeTargetAnApplication = (nativeTarget) => {
+    return nativeTarget.productType === '"com.apple.product-type.application"';
+  };
+  const nativeTargets = nonComments(xcodeProject.pbxNativeTargetSection());
+  var applicationBuildConfigurations = [];
+  Object.keys(nativeTargets)
+  .map(nativeTargetId => {
+    return nativeTargets[nativeTargetId]
+  })
+  .filter(isNativeTargetAnApplication)
+  .forEach(nativeTarget => {
+    const buildConfigurationListId = nativeTarget.buildConfigurationList;
+    const buildConfigurationList = nonComments(
+      xcodeProject.pbxXCConfigurationList()[buildConfigurationListId]);
+    applicationBuildConfigurations = applicationBuildConfigurations
+    .concat(buildConfigurationList.buildConfigurations.map(buildConfiguration => {
+      return buildConfiguration.value;
+    }));
+  })
+  return applicationBuildConfigurations;
+}
+
 // region Swift options injection
 
 /**
@@ -183,6 +213,11 @@ function injectSwiftOptionsInProjectConfig(xcodeProject) {
     config,
     buildSettings;
 
+  const applicationBuildConfigurations = getApplicationBuildConfigurations(xcodeProject);
+  const isBuildConfigurationIdForApplication = (buildConfigurationId) => {
+    return applicationBuildConfigurations.indexOf(buildConfigurationId) > -1;
+  };
+
   for (config in configurations) {
     buildSettings = configurations[config].buildSettings;
 
@@ -192,8 +227,14 @@ function injectSwiftOptionsInProjectConfig(xcodeProject) {
       (Number(buildSettings['IPHONEOS_DEPLOYMENT_TARGET'].split('.')[0]) >= 8))){
       buildSettings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET;
     }
+
+    // Only change LD_RUNPATH_SEARCH_PATHS for application build configurations
+    // If changed for tests, it can break them
+    if (isBuildConfigurationIdForApplication(config)){
+      buildSettings['LD_RUNPATH_SEARCH_PATHS'] = '"@executable_path/Frameworks"';
+    }
+
     buildSettings['EMBEDDED_CONTENT_CONTAINS_SWIFT'] = "YES";
-    buildSettings['LD_RUNPATH_SEARCH_PATHS'] = '"@executable_path/Frameworks"';
     buildSettings['SWIFT_VERSION'] = '3.0';
 
     // if project module name is not defined - set it with value from build settings
@@ -203,7 +244,7 @@ function injectSwiftOptionsInProjectConfig(xcodeProject) {
   }
   logger.info('iOS project now has deployment target set to: ' + buildSettings['IPHONEOS_DEPLOYMENT_TARGET']);
   logger.info('iOS project option EMBEDDED_CONTENT_CONTAINS_SWIFT set as: YES');
-  logger.info('iOS project Runpath Search Paths set to: @executable_path/Frameworks');
+  logger.info('iOS project Runpath Search Paths set to: @executable_path/Frameworks for application targets');
   logger.info('iOS project "Use Legacy Swift Language Version" set to: NO');
 }
 
